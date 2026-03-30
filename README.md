@@ -224,6 +224,11 @@ Web UI Service:
 ```
 
 ---
+## Wiki
+
+https://github.com/fqazzazee/NetScan-WoL/wiki/NetScan%E2%80%90WoL-Wiki
+
+---
 
 ## License
 
