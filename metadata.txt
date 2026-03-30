@@ -1,0 +1,34 @@
+# GitHub Repository Metadata
+
+## Repository Description (one-liner, 350 char max)
+
+ARP-based network discovery and Wake-on-LAN tool for Linux. Interactive CLI and optional web dashboard. Scans broadcast domains at Layer 2, resolves hostnames, manages saved hosts with online/offline status, and sends magic packets. Multi-distro support with self-installing dependencies.
+
+
+## Short Description (for social sharing / pinned repos)
+
+Scan your network, find every host, wake any machine. A single bash script with an optional web UI.
+
+
+## Topics / Tags
+
+netscan
+wake-on-lan
+wol
+arp-scan
+network-scanner
+network-discovery
+homelab
+linux
+bash
+flask
+sysadmin
+network-tools
+layer2
+magic-packet
+
+
+## GitHub About Section (Website field)
+
+https://blog.safeqbit.com/
+https://blog.safeqbit.com/netscan-wol-network-discovery-and-wake-on-lan-from-a-single-script/
