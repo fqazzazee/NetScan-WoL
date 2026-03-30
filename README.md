@@ -196,10 +196,10 @@ WoL sends a "magic packet" containing the target's MAC address repeated 16 times
 | Distro | Package Manager | Tested |
 |--------|----------------|--------|
 | Ubuntu / Debian | apt | ✓ |
-| Fedora | dnf | ✓ |
-| RHEL / Rocky / Alma | dnf / yum | ✓ |
-| Arch / Manjaro | pacman | ✓ |
-| openSUSE | zypper | ✓ |
+| Fedora | dnf | x |
+| RHEL / Rocky / Alma | dnf / yum | x |
+| Arch / Manjaro | pacman | x |
+| openSUSE | zypper | x |
 
 Package names are automatically mapped to distro-specific equivalents (e.g., `avahi-utils` becomes `avahi-tools` on Fedora, `arping` maps to `iputils` on Fedora/Arch).
 
