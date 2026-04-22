@@ -26,7 +26,6 @@ Works on Ubuntu, Fedora, RHEL, Rocky, Alma, Arch, openSUSE, and other mainstream
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/netscan-wol.git
 cd netscan-wol
 chmod +x netscan-wol.sh
 
