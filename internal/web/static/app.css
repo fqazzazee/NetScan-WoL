@@ -113,6 +113,17 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The hidden attribute must beat every layout rule in this file.
+ *
+ * Browsers implement `hidden` through a user-agent rule of `[hidden] { display:
+ * none }`, and any author declaration of `display` overrides it — so
+ * `.modal { display: grid }` alone leaves the dialog permanently on screen as
+ * an empty panel, and `.login { display: grid }` stops the sign-in screen from
+ * ever going away after a successful sign-in. The whole interface toggles
+ * visibility with this attribute, so it is declared !important rather than
+ * relying on source order. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
