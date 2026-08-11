@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>NetScan-WoL Command Hub</title>
+<link rel="stylesheet" href="/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%93%A1</text></svg>">
+</head>
+<body>
+
+<!-- Sign-in gate. Everything else stays hidden until a session exists. -->
+<div id="login" class="login" hidden>
+  <form class="login-card" id="login-form">
+    <div class="login-brand">
+      <span class="logo" aria-hidden="true">◎</span>
+      <div>
+        <h1>NetScan-WoL</h1>
+        <p class="muted">Command Hub</p>
+      </div>
+    </div>
+    <label for="login-user">Username</label>
+    <input id="login-user" name="username" autocomplete="username" required autocapitalize="none" spellcheck="false">
+    <label for="login-pass">Password</label>
+    <input id="login-pass" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit" class="btn primary block">Sign in</button>
+    <p class="form-error" id="login-error" role="alert" aria-live="polite"></p>
+  </form>
+</div>
+
+<div id="app" class="app" hidden>
+
+  <header class="topbar">
+    <button class="icon-btn nav-toggle" id="nav-toggle" aria-label="Menu" aria-expanded="false">☰</button>
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◎</span>
+      <span class="brand-name" id="hub-name">NetScan-WoL</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="theme-btn" aria-label="Change theme" title="Theme"><span id="theme-icon">◐</span></button>
+      <details class="menu">
+        <summary class="icon-btn" aria-label="Account">👤</summary>
+        <div class="menu-panel">
+          <p class="menu-user" id="menu-user"></p>
+          <button class="menu-item" data-view="settings">Settings</button>
+          <button class="menu-item" id="change-pw-btn">Change password</button>
+          <button class="menu-item danger" id="logout-btn">Sign out</button>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <nav class="sidenav" id="sidenav" aria-label="Sections">
+    <button class="nav-item" data-view="agents"><span class="nav-ico">⬡</span><span>Agents</span></button>
+    <button class="nav-item" data-view="scan"><span class="nav-ico">◎</span><span>Scan</span></button>
+    <button class="nav-item" data-view="hosts"><span class="nav-ico">★</span><span>Hosts</span></button>
+    <button class="nav-item" data-view="wake"><span class="nav-ico">⏻</span><span>Wake</span></button>
+    <button class="nav-item" data-view="history"><span class="nav-ico">◷</span><span>History</span></button>
+    <button class="nav-item" data-view="enroll"><span class="nav-ico">🔑</span><span>Enrollment</span></button>
+    <button class="nav-item" data-view="audit"><span class="nav-ico">▤</span><span>Audit</span></button>
+    <button class="nav-item" data-view="settings"><span class="nav-ico">⚙</span><span>Settings</span></button>
+  </nav>
+
+  <main class="content" id="content">
+
+    <!-- Agents -->
+    <section class="view" id="view-agents">
+      <div class="view-head">
+        <h2>Agents</h2>
+        <button class="btn" id="agents-refresh">Refresh</button>
+      </div>
+      <p class="muted view-intro">
+        Agents run on the networks you want to reach. Each one dials out to this hub over mutual TLS,
+        so no inbound firewall rule is needed on the remote side.
+      </p>
+      <div id="agents-list" class="card-grid"></div>
+      <div class="empty" id="agents-empty" hidden>
+        <p>No agents yet.</p>
+        <button class="btn primary" data-view="enroll">Add your first agent</button>
+      </div>
+    </section>
+
+    <!-- Scan -->
+    <section class="view" id="view-scan" hidden>
+      <div class="view-head"><h2>Network scan</h2></div>
+      <form class="panel form-grid" id="scan-form">
+        <div class="field">
+          <label for="scan-agent">Agent</label>
+          <select id="scan-agent" required></select>
+        </div>
+        <div class="field">
+          <label for="scan-iface">Interface</label>
+          <select id="scan-iface"><option value="">All eligible (auto-discover)</option></select>
+        </div>
+        <div class="field">
+          <label for="scan-subnet">Subnet <span class="muted">optional</span></label>
+          <input id="scan-subnet" placeholder="10.0.50.0/24" inputmode="text" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="field checkbox">
+          <label><input type="checkbox" id="scan-names" checked> Resolve hostnames</label>
+        </div>
+        <div class="field actions">
+          <button type="submit" class="btn primary" id="scan-run">Run scan</button>
+        </div>
+      </form>
+
+      <div id="scan-status" class="status" hidden></div>
+
+      <div id="scan-results" hidden>
+        <div class="view-head sub">
+          <h3>Results <span class="chip" id="scan-count">0</span></h3>
+          <input id="scan-filter" class="filter" placeholder="Filter by IP, MAC, name or vendor" aria-label="Filter results">
+        </div>
+        <div id="scan-segments" class="segments"></div>
+        <div id="scan-table" class="host-list"></div>
+      </div>
+    </section>
+
+    <!-- Saved hosts -->
+    <section class="view" id="view-hosts" hidden>
+      <div class="view-head">
+        <h2>Saved hosts</h2>
+        <div class="head-actions">
+          <button class="btn" id="hosts-status">Check status</button>
+          <button class="btn primary" id="hosts-add">Add host</button>
+        </div>
+      </div>
+      <input id="hosts-filter" class="filter wide" placeholder="Filter saved hosts" aria-label="Filter saved hosts">
+      <div id="hosts-list" class="host-list"></div>
+      <div class="empty" id="hosts-empty" hidden><p>No saved hosts. Save one from a scan result, or add it manually.</p></div>
+    </section>
+
+    <!-- Wake -->
+    <section class="view" id="view-wake" hidden>
+      <div class="view-head"><h2>Wake-on-LAN</h2></div>
+      <p class="muted view-intro">
+        A magic packet only travels within a broadcast domain. Pick the agent that sits on the same
+        segment as the machine you want to wake.
+      </p>
+      <form class="panel form-grid" id="wake-form">
+        <div class="field">
+          <label for="wake-agent">Send from agent</label>
+          <select id="wake-agent" required></select>
+        </div>
+        <div class="field">
+          <label for="wake-mac">Target MAC</label>
+          <input id="wake-mac" placeholder="aa:bb:cc:dd:ee:ff" required autocapitalize="none" spellcheck="false" inputmode="text">
+        </div>
+        <div class="field">
+          <label for="wake-broadcast">Broadcast address <span class="muted">optional</span></label>
+          <input id="wake-broadcast" placeholder="auto" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="field narrow">
+          <label for="wake-port">Port</label>
+          <input id="wake-port" type="number" min="1" max="65535" placeholder="9" inputmode="numeric">
+        </div>
+        <div class="field narrow">
+          <label for="wake-count">Packets</label>
+          <input id="wake-count" type="number" min="1" max="16" placeholder="3" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="wake-secureon">SecureOn password <span class="muted">optional</span></label>
+          <input id="wake-secureon" placeholder="not usually needed" autocapitalize="none" spellcheck="false">
+        </div>
+        <div class="field actions">
+          <button type="submit" class="btn primary">Send magic packet</button>
+        </div>
+      </form>
+      <div id="wake-status" class="status" hidden></div>
+    </section>
+
+    <!-- History -->
+    <section class="view" id="view-history" hidden>
+      <div class="view-head">
+        <h2>Scan history</h2>
+        <button class="btn" id="history-refresh">Refresh</button>
+      </div>
+      <div id="history-list" class="card-grid"></div>
+      <div class="empty" id="history-empty" hidden><p>No scans recorded yet.</p></div>
+      <div id="history-detail" hidden>
+        <div class="view-head sub">
+          <h3 id="history-detail-title">Scan detail</h3>
+          <button class="btn" id="history-close">Close</button>
+        </div>
+        <div id="history-hosts" class="host-list"></div>
+      </div>
+    </section>
+
+    <!-- Enrollment -->
+    <section class="view" id="view-enroll" hidden>
+      <div class="view-head"><h2>Agent enrollment</h2></div>
+      <p class="muted view-intro">
+        An enrollment token is a 256-bit secret (64 hex characters) that admits exactly one agent by
+        default. The hub stores only its hash, so the token is shown once and cannot be recovered
+        afterwards — issue a new one instead.
+      </p>
+
+      <form class="panel form-grid" id="token-form">
+        <div class="field">
+          <label for="token-label">Label</label>
+          <input id="token-label" placeholder="branch-office switch closet" maxlength="80">
+        </div>
+        <div class="field narrow">
+          <label for="token-uses">Max uses</label>
+          <input id="token-uses" type="number" min="1" max="100" value="1" inputmode="numeric">
+        </div>
+        <div class="field narrow">
+          <label for="token-ttl">Valid for (minutes)</label>
+          <input id="token-ttl" type="number" min="1" max="10080" value="60" inputmode="numeric">
+        </div>
+        <div class="field actions">
+          <button type="submit" class="btn primary">Generate token</button>
+        </div>
+      </form>
+
+      <div class="panel token-reveal" id="token-reveal" hidden>
+        <h3>Token created</h3>
+        <p class="warn">Copy this now. It will not be shown again.</p>
+        <label class="reveal-label">Enrollment token</label>
+        <div class="copy-row">
+          <code id="token-secret" class="token"></code>
+          <button class="btn" data-copy="token-secret">Copy</button>
+        </div>
+        <label class="reveal-label">Run this on the agent host</label>
+        <div class="copy-row">
+          <code id="token-cmd" class="cmd"></code>
+          <button class="btn" data-copy="token-cmd">Copy</button>
+        </div>
+        <p class="muted small">
+          The <code>--ca-pin</code> value binds the agent to this hub's certificate authority. Without it the
+          agent would have to trust whatever certificate answers on first contact.
+        </p>
+      </div>
+
+      <div class="view-head sub"><h3>Issued tokens</h3></div>
+      <div id="token-list" class="card-grid"></div>
+    </section>
+
+    <!-- Audit -->
+    <section class="view" id="view-audit" hidden>
+      <div class="view-head">
+        <h2>Audit log</h2>
+        <button class="btn" id="audit-refresh">Refresh</button>
+      </div>
+      <p class="muted view-intro">Sign-ins, enrollments, token issuance, agent removal, and every wake command.</p>
+      <div id="audit-list" class="audit-list"></div>
+    </section>
+
+    <!-- Settings -->
+    <section class="view" id="view-settings" hidden>
+      <div class="view-head"><h2>Settings</h2></div>
+      <form class="panel form-grid" id="settings-form">
+        <div class="field">
+          <label for="set-name">Hub name</label>
+          <input id="set-name" maxlength="60">
+        </div>
+        <div class="field">
+          <label for="set-theme">Default theme for new browsers</label>
+          <select id="set-theme">
+            <option value="system">Match device</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="field narrow">
+          <label for="set-timeout">Scan timeout (seconds)</label>
+          <input id="set-timeout" type="number" min="5" max="900" inputmode="numeric">
+        </div>
+        <div class="field narrow">
+          <label for="set-history">Scans to keep</label>
+          <input id="set-history" type="number" min="1" max="1000" inputmode="numeric">
+        </div>
+        <div class="field narrow">
+          <label for="set-window">Agent online window (seconds)</label>
+          <input id="set-window" type="number" min="15" max="3600" inputmode="numeric">
+        </div>
+        <div class="field checkbox">
+          <label><input type="checkbox" id="set-names"> Resolve hostnames by default</label>
+        </div>
+        <div class="field actions">
+          <button type="submit" class="btn primary">Save settings</button>
+        </div>
+      </form>
+      <div id="settings-status" class="status" hidden></div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button class="tab" data-view="agents"><span class="nav-ico">⬡</span><span>Agents</span></button>
+    <button class="tab" data-view="scan"><span class="nav-ico">◎</span><span>Scan</span></button>
+    <button class="tab" data-view="hosts"><span class="nav-ico">★</span><span>Hosts</span></button>
+    <button class="tab" data-view="wake"><span class="nav-ico">⏻</span><span>Wake</span></button>
+    <button class="tab" data-view="enroll"><span class="nav-ico">🔑</span><span>Enroll</span></button>
+  </nav>
+</div>
+
+<!-- Modal host, reused for every dialog -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-head">
+      <h3 id="modal-title"></h3>
+      <button class="icon-btn" id="modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

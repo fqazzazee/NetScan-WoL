@@ -1,0 +1,71 @@
+# NetScan-WoL with Docker Compose or podman-compose.
+#
+#   docker compose -f deploy/docker/compose.yaml up -d
+#
+# The hub's first-start password is printed to its log:
+#   docker compose logs hub
+#
+# The agent is commented out because it cannot be enrolled until the hub has
+# issued a token. Bring up the hub, generate a token in the UI, then fill in
+# the environment below and start the agent.
+
+name: netscan-wol
+
+services:
+  hub:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Containerfile.hub
+    image: netscan-wol-hub:2.0.0
+    container_name: nswhub
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - hub-state:/var/lib/netscan-wol/hub
+    command:
+      - "--data=/var/lib/netscan-wol/hub"
+      - "--listen=:8443"
+      # Names the TLS certificate should cover. Add the DNS name or IP you will
+      # actually browse to, or the certificate will not match and agents will
+      # not be able to verify the hub.
+      - "--names=localhost,127.0.0.1"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    healthcheck:
+      # The hub serves TLS with its own CA, so the check does not verify the
+      # chain — it only proves the process is answering.
+      test: ["CMD", "/nswhub", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # agent:
+  #   build:
+  #     context: ../..
+  #     dockerfile: deploy/docker/Containerfile.agent
+  #   image: netscan-wol-agent:2.0.0
+  #   container_name: nswagent
+  #   restart: unless-stopped
+  #   # Host networking is required. On a bridge the agent would only ever see
+  #   # the container subnet, and ARP scans of the real LAN would return nothing.
+  #   network_mode: host
+  #   cap_drop:
+  #     - ALL
+  #   cap_add:
+  #     # The only capability the agent needs: raw sockets for ARP and ICMP.
+  #     - NET_RAW
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   volumes:
+  #     - agent-state:/var/lib/netscan-wol/agent
+  #   command:
+  #     - "run"
+  #     - "--state=/var/lib/netscan-wol/agent"
+
+volumes:
+  hub-state:
+  agent-state:

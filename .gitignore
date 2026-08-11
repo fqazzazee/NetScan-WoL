@@ -1,0 +1,19 @@
+# Build output
+/bin/
+/dist/
+
+# Runtime state. These directories hold private keys and password hashes;
+# committing one would publish the CA that mints agent identities.
+/nswhub-data/
+/nswagent-state/
+*.key
+*.crt
+*.pem
+hub-state.json
+audit.log
+
+# Editor and OS noise
+.DS_Store
+*.swp
+.idea/
+.vscode/

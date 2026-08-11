@@ -1,0 +1,50 @@
+[Unit]
+Description=NetScan-WoL Command Hub
+Documentation=https://github.com/fqazzazee/NetScan-WoL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/nswhub --data /var/lib/netscan-wol/hub --listen :8443
+Restart=on-failure
+RestartSec=5s
+
+# The hub does no raw networking and never needs root. DynamicUser gives it a
+# transient account and, with StateDirectory, a private data directory.
+DynamicUser=yes
+StateDirectory=netscan-wol/hub
+StateDirectoryMode=0700
+
+# The hub only ever reads and writes its own state directory.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+RemoveIPC=yes
+
+# No capabilities whatsoever.
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Only the address families the HTTP server needs.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

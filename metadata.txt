@@ -2,12 +2,12 @@
 
 ## Repository Description (one-liner, 350 char max)
 
-ARP-based network discovery and Wake-on-LAN tool for Linux. Interactive CLI and optional web dashboard. Scans broadcast domains at Layer 2, resolves hostnames, manages saved hosts with online/offline status, and sends magic packets. Multi-distro support with self-installing dependencies.
+Distributed ARP-based network discovery and Wake-on-LAN. A command hub with a responsive web UI drives lightweight agents deployed across your networks over mutual TLS. Agents dial out, so no inbound firewall rules. Runs on hosts, Docker, Podman, Kubernetes and Proxmox LXC. Two static Go binaries, zero third-party dependencies.
 
 
 ## Short Description (for social sharing / pinned repos)
 
-Scan your network, find every host, wake any machine. A single bash script with an optional web UI.
+Find every host on every network, wake any machine. One hub, agents everywhere, mutual TLS between them.
 
 
 ## Topics / Tags
@@ -15,17 +15,25 @@ Scan your network, find every host, wake any machine. A single bash script with 
 netscan
 wake-on-lan
 wol
+arp
 arp-scan
 network-scanner
 network-discovery
 homelab
-linux
-bash
-flask
+selfhosted
+golang
+mtls
+kubernetes
+proxmox
+lxc
+podman
+docker
 sysadmin
 network-tools
 layer2
 magic-packet
+distributed-agents
+zero-dependency
 
 
 ## GitHub About Section (Website field)

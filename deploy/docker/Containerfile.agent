@@ -1,0 +1,47 @@
+# NetScan-WoL agent image. Works unchanged with docker build and podman build.
+#
+# The runtime stage is distroless-style scratch: the agent is a static binary
+# with no external dependencies, so there is nothing else the image needs. That
+# also means there is no shell in the image for an attacker to reach.
+
+FROM docker.io/library/golang:1.24-alpine AS build
+
+WORKDIR /src
+
+# Nothing outside the standard library is used, so there is no dependency
+# download step and the build works with no network access at all.
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+
+ARG VERSION=2.0.0
+ARG TARGETARCH
+
+# CGO off gives a genuinely static binary; without it the netgo resolver is not
+# guaranteed and the image would need libc.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags "-s -w -X main.Version=${VERSION}" \
+    -o /out/nswagent ./cmd/nswagent
+
+FROM scratch
+
+COPY --from=build /out/nswagent /nswagent
+
+# The agent stores its key and certificate here. Mount a volume so an identity
+# survives a container replacement — otherwise every restart needs a new
+# enrollment token.
+VOLUME ["/var/lib/netscan-wol/agent"]
+ENV NSWAGENT_STATE=/var/lib/netscan-wol/agent
+
+ENTRYPOINT ["/nswagent"]
+CMD ["run", "--state", "/var/lib/netscan-wol/agent"]
+
+# ARP scanning needs to see the real broadcast domain and to open raw sockets:
+#
+#   podman run -d --name nswagent \
+#     --network host --cap-add=NET_RAW \
+#     -v nswagent-state:/var/lib/netscan-wol/agent \
+#     netscan-wol-agent:2.0.0 run --state /var/lib/netscan-wol/agent
+#
+# On a bridged network the agent would only ever see the container subnet, so
+# host networking (or a macvlan) is not optional for useful results.

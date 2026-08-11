@@ -1,231 +1,281 @@
-# NetScan-WoL
+# NetScan-WoL v2
 
-**ARP-based network discovery and Wake-on-LAN tool for Linux with an interactive CLI and optional web dashboard.**
+**Distributed network discovery and Wake-on-LAN. One command hub, agents
+wherever your networks are.**
 
-NetScan-WoL scans your broadcast domain at Layer 2 using ARP, discovers every host with its IP, MAC address, vendor, and hostname, and lets you send Wake-on-LAN magic packets to bring machines online. It features persistent saved hosts, online/offline status checking, scan history, and an optional Flask-based web UI that can be deployed as a systemd service.
+NetScan-WoL discovers every host on a broadcast domain using ARP — including
+the machines that drop pings — and sends Wake-on-LAN magic packets to bring
+them back. Version 2 splits the tool into a **hub** with a web interface and
+**agents** that run on each network you want to reach, connected by mutual TLS.
 
-Works on Ubuntu, Fedora, RHEL, Rocky, Alma, Arch, openSUSE, and other mainstream Linux distributions. The script auto-detects your distro and package manager.
+Agents dial out to the hub, so a remote site needs no inbound firewall rule, no
+port forward, and no static address.
+
+```
+                         ┌────────────────────┐
+                         │    Command Hub     │
+      browser ──TLS────▶ │  web UI · CA ·     │
+                         │  agent API         │
+                         └─────────▲──────────┘
+                                   │ mutual TLS, agents dial out
+              ┌────────────────────┼────────────────────┐
+              │                    │                    │
+        ┌─────┴─────┐        ┌─────┴─────┐        ┌─────┴─────┐
+        │  agent    │        │  agent    │        │  agent    │
+        │ office LAN│        │ k8s node  │        │ Proxmox   │
+        └─────┬─────┘        └─────┬─────┘        └─────┬─────┘
+          ARP · WoL             ARP · WoL            ARP · WoL
+```
+
+---
+
+## What's new in v2
+
+| | v1 | v2 |
+|---|---|---|
+| Shape | One bash script on one machine | Hub plus distributed agents |
+| Reach | The network you ran it on | Every network with an agent |
+| Transport | — | Mutual TLS, per-agent certificates |
+| Joining agents | — | 256-bit single-use enrollment tokens |
+| Interface | Dark-only desktop dashboard | Responsive, light/dark/system |
+| Mobile | Not usable | Built mobile-first, works from 320px |
+| ARP scanning | Shelled out to `arp-scan` | Native raw sockets, three fallbacks |
+| Deployment | systemd service | systemd, Docker, Podman, Kubernetes, LXC |
+| Dependencies | arp-scan, wakeonlan, Python, Flask | None — one static binary each |
+| Auditing | Log file | Append-only audit log of every action |
 
 ---
 
 ## Features
 
-- **Layer 2 ARP scanning** discovers all hosts on the broadcast domain, including those that block ICMP ping
-- **Hostname resolution** cascades through reverse DNS, mDNS (Avahi), and NetBIOS (nbtscan)
-- **Wake-on-LAN** from scan results, saved favorites, manual MAC entry, or broadcast to all saved hosts
-- **Online/offline status** via `arping` (Layer 2) with ICMP ping fallback
-- **Saved hosts** persist across sessions with labels, last known IP, and timestamps
-- **Scan history** stored as timestamped TSV files for browsing past results
-- **Multi-distro support** with automatic package manager detection (apt, dnf, yum, pacman, zypper)
-- **Self-installing dependencies** for both required and optional packages
-- **Web UI** with a dark-themed dashboard deployable as a systemd service
-- **Shared data** between CLI and web UI via `~/.netscan-wol/`
+**Command Hub**
+- Responsive web interface, usable one-handed on a phone and dense on a desktop
+- Light, dark, and match-device themes
+- Live agent roster with platform, capabilities, reachable subnets, last contact
+- Saved hosts keyed by MAC, so a DHCP change never loses a machine
+- Scan history, per-agent, with the method used for each segment
+- Append-only audit log of sign-ins, enrollments, agent changes, and every wake
+
+**Agents**
+- Native ARP scanning over raw sockets — no `arp-scan` package required
+- Automatic fallback to `arp-scan`, then the kernel neighbour table, when raw
+  sockets are unavailable, with a clear explanation of what was used
+- Auto-discovery of every scannable interface, and a reason for each one skipped
+- Hostname resolution via reverse DNS and a built-in mDNS client
+- Vendor identification, including flagging virtual and locally administered MACs
+- Wake-on-LAN with directed broadcast, SecureOn, custom ports and repeat counts
+- Liveness checks over ARP, ICMP, then TCP, with MAC confirmation
+- Runs on a host, in Docker or Podman, as a Kubernetes DaemonSet, or in a
+  Proxmox LXC container
+
+**Security**
+- Mutual TLS with a per-agent certificate from the hub's own CA
+- 256-bit enrollment tokens, single-use by default, stored only as hashes
+- CA pinning to close the trust-on-first-use gap at enrollment
+- PBKDF2 password hashing, session and CSRF protection, login throttling
+- One capability for the agent (`CAP_NET_RAW`), none at all for the hub
+- **Zero third-party dependencies** — Go standard library only
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
-cd netscan-wol
-chmod +x netscan-wol.sh
+git clone https://github.com/fqazzazee/NetScan-WoL.git
+cd NetScan-WoL
 
-# Install dependencies automatically
-sudo ./netscan-wol.sh --install
+# See what's ready first — needs no privileges, changes nothing.
+./install.sh check
 
-# Launch the interactive menu
-sudo ./netscan-wol.sh
+# Then install. With no arguments it asks whether this server should be a
+# dashboard hub, an agent, or both.
+sudo ./install.sh hub --names hub.example.com
 ```
 
-Root privileges are required because ARP scanning operates at the raw socket level.
+The installer downloads the release build for your platform, or compiles from
+the checkout if there is no published build for it. It sets up a hardened
+systemd unit and prints where to find the first-start password.
+
+To run it without installing anything:
+
+```bash
+make build
+./bin/nswhub --names hub.example.com
+```
+
+Open `https://hub.example.com:8443`, sign in, set a real password, then go to
+**Enrollment** and generate a token. The UI shows the exact command to run on
+the agent machine:
+
+```bash
+nswagent enroll --hub https://hub.example.com:8443 \
+  --token 8f3c… --ca-pin sha256:1a2b…
+nswagent run
+```
+
+Or let the installer do the whole agent side, enrollment included:
+
+```bash
+sudo ./install.sh agent \
+  --hub https://hub.example.com:8443 \
+  --token 8f3c… --ca-pin sha256:1a2b…
+```
+
+The agent appears in the hub within seconds. Select it, run a scan, wake
+something.
+
+Full per-platform instructions: **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+---
+
+## Why ARP
+
+Ping sweeps send ICMP echo requests and wait. Plenty of hosts — Windows
+workstations especially — drop ICMP at the firewall and stay invisible.
+
+ARP operates at Layer 2. Every host on a broadcast domain must answer ARP to
+participate in the network at all; there is no firewall rule that blocks it
+without also breaking the host's own connectivity. So an ARP sweep finds
+everything on the segment: firewalled workstations, printers, IoT devices,
+anything with an address.
+
+The same property makes ARP the better liveness probe, which is why status
+checks try it first and fall back to ICMP and TCP only when they must.
+
+The cost is that ARP does not cross a router. That constraint is exactly why v2
+is distributed: one agent per broadcast domain you care about.
+
+---
+
+## How the pieces fit
+
+**The hub** serves the web interface, runs a private certificate authority, and
+dispatches commands. It holds no network privileges and never connects to an
+agent.
+
+**Agents** hold a long poll open against the hub. When you run a scan, the
+command is handed to the waiting poll, the agent executes it locally, and posts
+the result back. Latency is a few milliseconds; connectivity requirements are
+outbound-only.
+
+**Enrollment** exchanges a one-time 256-bit token for a client certificate. The
+hub stores only the token's hash and consumes it atomically, so a single-use
+token admits exactly one agent even if two try at once.
+
+**Removing an agent** deletes its record. The certificate stays valid but maps
+to nothing, so every request it makes is refused — revocation without a CRL.
+
+---
+
+## Command reference
+
+### `nswhub`
+
+```
+--listen ADDR              operator web interface address (default :8443)
+--agent-listen ADDR        serve the agent API on its own port
+--data DIR                 state, CA and audit log
+--names LIST               DNS names and IPs for the TLS certificate
+--insecure                 plain HTTP, for use behind a proxy you control
+--trust-proxy-headers      honour X-Forwarded-For
+--print-pin                print the CA fingerprint and exit
+--reset-password USER      reset an operator's password and exit
+--log-level LEVEL          debug, info, warn, error
+```
+
+### `nswagent`
+
+```
+nswagent enroll   join a hub with an enrollment token
+nswagent run      connect and serve commands
+nswagent status   show this agent's identity and capabilities
+nswagent interfaces  list interfaces and which can be scanned
+
+enroll options:
+  --hub URL            hub address
+  --token HEX          64-character enrollment token
+  --token-file PATH    read the token from a file instead
+  --ca-pin sha256:...  expected hub CA fingerprint
+  --name NAME          display name in the hub
+  --labels K=V,K=V     tags shown in the UI
+  --state DIR          where to keep the key and certificate
+```
+
+---
+
+## Deployment
+
+| Platform | Assets |
+|---|---|
+| systemd | `deploy/systemd/` |
+| Docker / Podman | `deploy/docker/` |
+| Kubernetes | `deploy/kubernetes/` |
+| Proxmox LXC | `deploy/proxmox/create-agent-lxc.sh` |
+
+One rule applies everywhere: **the agent must be attached to the broadcast
+domain it is meant to scan.** A container on a bridge network, or a pod on the
+cluster overlay, can only see its own segment. Use host networking, a macvlan,
+or a bridged LXC interface.
 
 ---
 
 ## Requirements
 
-**Required** (installed automatically via `--install`):
+**Building:** Go 1.24 or newer. No other dependencies — no module downloads, no
+build tooling, no network access.
 
-| Package | Purpose |
-|---------|---------|
-| `arp-scan` | Layer 2 ARP network scanning |
-| `wakeonlan` | Sending WoL magic packets |
+**Hub:** any Linux, macOS or Windows host. No privileges.
 
-**Optional** (offered during install for enhanced functionality):
+**Agent:** Linux for native ARP scanning, with `CAP_NET_RAW`. It runs without
+that capability and without root, falling back to `arp-scan` or the kernel
+neighbour table, and tells you which it used.
 
-| Package | Purpose |
-|---------|---------|
-| `avahi-utils` / `avahi-tools` | mDNS/Bonjour hostname resolution |
-| `nbtscan` | NetBIOS/SMB hostname resolution |
-| `arping` | Layer 2 ARP host status checking |
-
-**Web UI** additionally requires:
-
-| Package | Purpose |
-|---------|---------|
-| `python3` | Runtime for the Flask web server |
-| `flask` | Web framework (installed via pip) |
+**Targets:** Wake-on-LAN enabled in BIOS/UEFI and in the network adapter. On
+Linux, `ethtool eth0` should report `Wake-on: g`.
 
 ---
 
-## Usage
+## Security
 
-### CLI
+The full threat model, trust boundaries, cryptographic choices, and a candid
+list of known limitations are in **[docs/SECURITY.md](docs/SECURITY.md)**.
+
+The short version: agents authenticate with per-agent certificates over mutual
+TLS; enrollment uses single-use 256-bit tokens stored as hashes; the agent needs
+one capability and the hub needs none; and the project depends on nothing
+outside the Go standard library.
+
+If you run agents, pass `--ca-pin`. It is the one thing that closes the
+trust-on-first-use window at enrollment, and the hub prints it next to every
+token.
+
+---
+
+## Development
 
 ```bash
-# Launch interactive menu (auto-detect interface)
-sudo ./netscan-wol.sh
-
-# Specify interface and subnet
-sudo ./netscan-wol.sh -i ens18 -s 10.0.50.0/24
-
-# Install all dependencies and exit
-sudo ./netscan-wol.sh --install
-
-# Show help
-./netscan-wol.sh --help
+make build       # both binaries
+make test        # test suite
+make test-race   # under the race detector
+make test-raw    # raw ARP socket path, in a private network namespace
+make check       # vet and test
+make images      # container images via podman or docker
 ```
 
-### CLI Menu Options
-
-| # | Option | Description |
-|---|--------|-------------|
-| 1 | Scan Network | Run ARP scan, resolve hostnames, save hosts |
-| 2 | View Last Scan | Redisplay previous scan results |
-| 3 | WoL from Scan | Wake a discovered host |
-| 4 | Saved Hosts | Manage favorites, check status, add/delete |
-| 5 | Quick WoL | Status-checked list, wake one or all |
-| 6 | Manual WoL | Enter any MAC, optional custom broadcast IP |
-| 7 | Scan History | Browse past scan results |
-| 8 | Settings | Interface, subnet, dependencies, web service |
-
-### Web UI Service
-
-```bash
-# Install and enable as a systemd service (prints access URLs)
-sudo ./netscan-wol.sh --web-install
-
-# Custom port and interface
-sudo ./netscan-wol.sh --web-install --web-port 9090 -i ens18
-
-# Check service status
-sudo ./netscan-wol.sh --web-status
-
-# Uninstall (preserves saved hosts and scan history)
-sudo ./netscan-wol.sh --web-uninstall
-```
-
-The web service can also be managed from the interactive menu under Settings > Web UI Service.
-
-### Running the Web UI Manually
-
-If you prefer to run the web server directly without systemd:
-
-```bash
-pip3 install flask
-sudo python3 netscan-web.py --port 8888 --host 0.0.0.0
-```
+The raw-socket tests need `CAP_NET_RAW`; `make test-raw` arranges it with
+`unshare` and a dummy interface, so it works unprivileged.
 
 ---
 
-## File Structure
+## Upgrading from v1
 
-```
-netscan-wol/
-├── netscan-wol.sh          # Main CLI tool
-├── netscan-web.py          # Flask web UI server
-└── README.md
+v2 is a different architecture and shares no code or data format with v1. There
+is no migration path for saved hosts; the v1 file was `MAC|Label|IP|Timestamp`
+per line and is straightforward to re-enter or convert by hand against the
+`POST /api/v1/hosts` endpoint.
 
-~/.netscan-wol/             # Data directory (created at runtime)
-├── saved_macs.conf         # Saved hosts (MAC|Label|IP|Timestamp)
-├── last_scan.tsv           # Most recent scan results
-├── netscan-wol.log         # CLI log file
-├── netscan-wol-web.log     # Web UI log file
-└── history/                # Timestamped scan history
-    ├── scan_20250330_141500.tsv
-    └── ...
-```
-
-When the web service is installed via `--web-install`:
-
-```
-/opt/netscan-wol/
-└── netscan-web.py          # Deployed copy of the web server
-
-/etc/systemd/system/
-└── netscan-wol-web.service # systemd unit file
-```
-
----
-
-## Web UI Dashboard
-
-The web dashboard provides five sections that mirror the CLI functionality:
-
-| Section | Description |
-|---------|-------------|
-| Network Scan | Run scans, view results, save hosts, send WoL |
-| Saved Hosts | Manage saved MACs, check online/offline status |
-| Wake-on-LAN | Manual WoL by MAC, quick WoL from saved hosts |
-| Scan History | Browse and inspect past scan results |
-| Dependencies | View installed/missing packages and versions |
-
-Both CLI and web UI read from and write to the same `~/.netscan-wol/` directory, so saved hosts and scan history stay in sync regardless of which interface you use.
-
----
-
-## How It Works
-
-### Why ARP Instead of Ping
-
-Ping sweeping sends ICMP echo requests and waits for replies. Many hosts, especially Windows machines, have their firewall configured to drop ICMP, making them invisible to ping-based scanners.
-
-ARP operates at Layer 2. Every host on the broadcast domain must respond to ARP requests to participate in the network. There is no firewall rule that blocks ARP without also breaking the host's network connectivity entirely. This means `arp-scan` discovers everything on the segment: firewalled workstations, IoT devices, printers, and anything else with an IP address.
-
-### Status Checking
-
-Online/offline status checks use `arping` first (Layer 2 ARP probe to the host's last known IP), which has the same firewall-bypass advantage as the initial scan. If `arping` is not installed, it falls back to standard ICMP ping.
-
-### Wake-on-LAN
-
-WoL sends a "magic packet" containing the target's MAC address repeated 16 times, preceded by 6 bytes of `0xFF`. The target machine's network interface, even while the machine is powered off, listens for this pattern and triggers a boot. The target machine must have WoL enabled in its BIOS/UEFI and network adapter settings.
-
----
-
-## Supported Distributions
-
-| Distro | Package Manager | Tested |
-|--------|----------------|--------|
-| Ubuntu / Debian | apt | ✓ |
-| Fedora | dnf | x |
-| RHEL / Rocky / Alma | dnf / yum | x |
-| Arch / Manjaro | pacman | x |
-| openSUSE | zypper | x |
-
-Package names are automatically mapped to distro-specific equivalents (e.g., `avahi-utils` becomes `avahi-tools` on Fedora, `arping` maps to `iputils` on Fedora/Arch).
-
----
-
-## Command Reference
-
-```
-Usage:  sudo ./netscan-wol.sh [OPTIONS]
-
-Options:
-  -i, --interface <iface>   Network interface (auto-detected if omitted)
-  -s, --subnet <cidr>       Subnet to scan (default: --localnet)
-      --install              Install all dependencies and exit
-  -h, --help                Show help
-
-Web UI Service:
-      --web-install          Install & enable the web UI as a systemd service
-      --web-uninstall        Stop, disable & remove the web UI service
-      --web-status           Show web UI service status
-      --web-port <port>      Set web UI port (default: 8888)
-```
-
----
-## Wiki
-
-https://github.com/fqazzazee/NetScan-WoL/wiki/NetScan%E2%80%90WoL-Wiki
+The v1 single-machine workflow maps to v2 as: run the hub and one agent on the
+same box.
 
 ---
 
@@ -233,8 +283,6 @@ https://github.com/fqazzazee/NetScan-WoL/wiki/NetScan%E2%80%90WoL-Wiki
 
 MIT
 
----
-
 ## Contributing
 
-Contributions, issues, and feature requests are welcome. Feel free to open an issue or submit a pull request.
+Issues and pull requests are welcome.
