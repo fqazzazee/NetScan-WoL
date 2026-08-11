@@ -1,0 +1,139 @@
+# NetScan-WoL agent on Kubernetes, as a DaemonSet.
+#
+# Read this before applying — the networking requirements are strict and an
+# agent that ignores them will scan the pod network and report nothing useful.
+#
+# ARP is a Layer 2 protocol. A pod on the cluster's overlay network sits in its
+# own broadcast domain, so it can only ever see other pods. To discover and
+# wake machines on the physical LAN, the agent pod must be attached to that
+# LAN. Two ways to do that:
+#
+#   1. hostNetwork: true — the pod shares the node's network namespace and sees
+#      exactly what the node sees. Simplest, and what this manifest does.
+#
+#   2. A macvlan or bridge secondary interface via Multus. Better isolation,
+#      considerably more setup. Attach the NetworkAttachmentDefinition and drop
+#      hostNetwork below.
+#
+# Either way the container needs NET_RAW to open the raw sockets ARP requires.
+#
+# Enrollment: run `nswagent enroll` once against a hub token and mount the
+# resulting state as a Secret, or use the init container pattern shown at the
+# bottom of this file to enroll from a token Secret on first start.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nswagent-enrollment
+  namespace: netscan-wol
+type: Opaque
+stringData:
+  # Replace with a token from the hub UI, and the CA pin shown beside it.
+  # A single-use token will admit only the first pod; for a DaemonSet across
+  # several nodes, issue a token with max_uses set to the node count.
+  token: "REPLACE_WITH_64_HEX_CHARACTER_TOKEN"
+  ca-pin: "sha256:REPLACE_WITH_HUB_CA_FINGERPRINT"
+  hub-url: "https://hub.example.com:8443"
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nswagent
+  namespace: netscan-wol
+  labels:
+    app.kubernetes.io/name: netscan-wol
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netscan-wol
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: netscan-wol
+        app.kubernetes.io/component: agent
+    spec:
+      # Without this the agent scans the pod network and finds only other pods.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+
+      # Restrict to nodes that actually sit on the network you want to scan.
+      # Label them first:  kubectl label node <node> netscan-wol/agent=true
+      nodeSelector:
+        netscan-wol/agent: "true"
+
+      tolerations:
+        - operator: Exists
+
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        # Enrolls on first start and does nothing on subsequent restarts, so
+        # the pod can be rescheduled without burning another token.
+        - name: enroll
+          image: ghcr.io/fqazzazee/netscan-wol-agent:2.0.0
+          command:
+            - /nswagent
+          args:
+            - enroll
+            - --hub=$(HUB_URL)
+            - --token=$(ENROLL_TOKEN)
+            - --ca-pin=$(CA_PIN)
+            - --name=$(NODE_NAME)
+            - --state=/state
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: HUB_URL
+              valueFrom:
+                secretKeyRef: { name: nswagent-enrollment, key: hub-url }
+            - name: ENROLL_TOKEN
+              valueFrom:
+                secretKeyRef: { name: nswagent-enrollment, key: token }
+            - name: CA_PIN
+              valueFrom:
+                secretKeyRef: { name: nswagent-enrollment, key: ca-pin }
+          volumeMounts:
+            - name: state
+              mountPath: /state
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+      containers:
+        - name: agent
+          image: ghcr.io/fqazzazee/netscan-wol-agent:2.0.0
+          args: ["run", "--state=/state"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              # The only capability the agent needs. Not privileged: true —
+              # that would hand it far more than raw sockets.
+              add: ["NET_RAW"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+
+      volumes:
+        # hostPath keeps the enrolled identity on the node, so a pod restart
+        # reuses it instead of consuming another enrollment token. Give each
+        # node its own directory.
+        - name: state
+          hostPath:
+            path: /var/lib/netscan-wol/agent
+            type: DirectoryOrCreate

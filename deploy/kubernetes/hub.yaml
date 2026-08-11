@@ -1,0 +1,152 @@
+# NetScan-WoL Command Hub on Kubernetes.
+#
+#   kubectl apply -f deploy/kubernetes/hub.yaml
+#   kubectl -n netscan-wol logs deploy/nswhub    # first-start password
+#
+# The hub keeps its certificate authority in the PersistentVolumeClaim below.
+# Losing that volume destroys the CA, which invalidates every enrolled agent
+# and forces a re-enrollment of the whole fleet. Back it up.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netscan-wol
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nswhub-state
+  namespace: netscan-wol
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nswhub
+  namespace: netscan-wol
+  labels:
+    app.kubernetes.io/name: netscan-wol
+    app.kubernetes.io/component: hub
+spec:
+  # Exactly one replica. State is a file on a ReadWriteOnce volume and the CA
+  # must not be issued from two places at once, so this does not scale out.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: netscan-wol
+      app.kubernetes.io/component: hub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: netscan-wol
+        app.kubernetes.io/component: hub
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # fsGroup makes the mounted volume writable by the non-root user.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: hub
+          image: ghcr.io/fqazzazee/netscan-wol-hub:2.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--data=/var/lib/netscan-wol/hub"
+            - "--listen=:8443"
+            # Every name and address agents or browsers will use must appear
+            # here, or the TLS certificate will not match.
+            - "--names=nswhub.netscan-wol.svc.cluster.local,nswhub,hub.example.com"
+          ports:
+            - name: https
+              containerPort: 8443
+          securityContext:
+            # The hub needs no capabilities at all: it does no raw networking.
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/netscan-wol/hub
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 2
+            periodSeconds: 10
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: nswhub-state
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nswhub
+  namespace: netscan-wol
+spec:
+  selector:
+    app.kubernetes.io/name: netscan-wol
+    app.kubernetes.io/component: hub
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https
+
+---
+# Exposing the hub outside the cluster.
+#
+# The backend speaks HTTPS with its own certificate, so the ingress controller
+# must be told to re-encrypt rather than talk plain HTTP to the pod. The
+# annotation below is nginx-specific; other controllers spell it differently.
+#
+# Terminating TLS at the ingress with a public certificate is also fine, and is
+# nicer for browsers. Agents are unaffected either way: they verify the hub by
+# the CA pin, and the pin follows the hub's own certificate. If the ingress
+# terminates TLS, agents must be pointed at a route that reaches the pod's own
+# TLS — usually a separate LoadBalancer service on the agent port.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nswhub
+  namespace: netscan-wol
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  rules:
+    - host: hub.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nswhub
+                port:
+                  name: https

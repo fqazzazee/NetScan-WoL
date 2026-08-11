@@ -1,0 +1,589 @@
+/* NetScan-WoL Command Hub — stylesheet.
+ *
+ * Mobile first. The base rules describe a phone; the two media queries at the
+ * bottom progressively widen the layout. Colour is expressed entirely through
+ * custom properties so the light and dark palettes swap by redefining tokens,
+ * never by overriding individual rules.
+ */
+
+/* ---------- design tokens ---------- */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --surface-3: #e3e8f0;
+  --border: #d3dae6;
+  --border-strong: #b6c0d0;
+
+  --text: #131822;
+  --text-muted: #5b6678;
+  --text-faint: #8791a3;
+
+  --accent: #2563c9;
+  --accent-hover: #1d4fa5;
+  --accent-text: #ffffff;
+  --accent-soft: #e2ecfd;
+
+  --ok: #1a7f4b;
+  --ok-soft: #dcf3e6;
+  --warn: #a86500;
+  --warn-soft: #fdefd6;
+  --danger: #c02a32;
+  --danger-soft: #fbe2e3;
+
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 12px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 8px 32px rgba(16, 24, 40, .18);
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --radius-lg: 16px;
+
+  --topbar-h: 56px;
+  --tabbar-h: 60px;
+  --sidenav-w: 216px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Dark palette for browsers set to "system" with no explicit choice stored. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1117;
+    --surface: #161b24;
+    --surface-2: #1d232e;
+    --surface-3: #262e3b;
+    --border: #2a3341;
+    --border-strong: #3b4557;
+
+    --text: #e6ebf2;
+    --text-muted: #9aa6b8;
+    --text-faint: #6f7b8d;
+
+    --accent: #5b9bf8;
+    --accent-hover: #7db0fa;
+    --accent-text: #0b1220;
+    --accent-soft: #17263e;
+
+    --ok: #46c98a;
+    --ok-soft: #13301f;
+    --warn: #e3a33c;
+    --warn-soft: #33260e;
+    --danger: #f37a80;
+    --danger-soft: #38181b;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .35);
+    --shadow-lg: 0 10px 40px rgba(0, 0, 0, .55);
+  }
+}
+
+/* Explicit dark choice wins over the device preference in both directions. */
+:root[data-theme="dark"] {
+  --bg: #0e1117;
+  --surface: #161b24;
+  --surface-2: #1d232e;
+  --surface-3: #262e3b;
+  --border: #2a3341;
+  --border-strong: #3b4557;
+
+  --text: #e6ebf2;
+  --text-muted: #9aa6b8;
+  --text-faint: #6f7b8d;
+
+  --accent: #5b9bf8;
+  --accent-hover: #7db0fa;
+  --accent-text: #0b1220;
+  --accent-soft: #17263e;
+
+  --ok: #46c98a;
+  --ok-soft: #13301f;
+  --warn: #e3a33c;
+  --warn-soft: #33260e;
+  --danger: #f37a80;
+  --danger-soft: #38181b;
+
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, .55);
+}
+
+/* ---------- reset ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  /* 16px base keeps iOS Safari from zooming when a text field gains focus. */
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -.01em; }
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.02rem; }
+p { margin: 0 0 .75rem; }
+code { font-family: var(--mono); font-size: .88em; }
+
+.muted { color: var(--text-muted); }
+.small { font-size: .85rem; }
+.warn { color: var(--warn); font-weight: 500; }
+
+/* Every interactive element gets the same visible focus ring. Removing it
+ * would make the UI unusable by keyboard, which matters more here than the
+ * aesthetics of a stray outline. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- controls ---------- */
+
+.btn {
+  appearance: none;
+  font: inherit;
+  font-size: .92rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  /* 40px tall: comfortably above the ~44px touch target once padding and
+   * border are counted, without looking oversized on a desktop. */
+  padding: .55rem .9rem;
+  min-height: 40px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, transform .06s ease;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+.btn.danger:hover { background: var(--danger-soft); }
+
+/* Still a comfortable touch target on a phone; tightened on desktop below,
+ * where the pointer is precise and density is worth more. */
+.btn.small { min-height: 38px; padding: .35rem .7rem; font-size: .86rem; }
+.btn.block { width: 100%; justify-content: center; }
+
+.icon-btn {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 1.15rem;
+  line-height: 1;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--surface-2); }
+
+input, select, textarea {
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: .55rem .7rem;
+  min-height: 42px;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input::placeholder { color: var(--text-faint); }
+
+label { display: block; font-size: .86rem; font-weight: 500; margin-bottom: .3rem; color: var(--text-muted); }
+
+.filter { margin-bottom: .8rem; }
+.filter.wide { width: 100%; }
+
+/* ---------- sign-in ---------- */
+
+.login {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+.login-card {
+  width: min(400px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 1.6rem;
+}
+.login-card label { margin-top: .9rem; }
+.login-card .btn { margin-top: 1.3rem; }
+.login-brand { display: flex; gap: .8rem; align-items: center; margin-bottom: .4rem; }
+.login-brand p { margin: 0; font-size: .9rem; }
+.logo { font-size: 1.6rem; color: var(--accent); line-height: 1; }
+.form-error { color: var(--danger); font-size: .88rem; margin: .8rem 0 0; min-height: 1.2em; }
+
+/* ---------- app shell ---------- */
+
+.app { min-height: 100dvh; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: 0 .75rem;
+  padding-top: env(safe-area-inset-top);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: .5rem; font-weight: 600; min-width: 0; }
+.brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: .15rem; }
+
+/* Account menu built on <details> so it needs no script to open or close. */
+.menu { position: relative; }
+.menu > summary { list-style: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: .35rem;
+  z-index: 40;
+}
+.menu-user { padding: .5rem .6rem; margin: 0; font-size: .85rem; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.menu-item {
+  display: block; width: 100%; text-align: left;
+  background: none; border: 0; font: inherit; font-size: .92rem;
+  color: var(--text); padding: .55rem .6rem; border-radius: var(--radius-sm); cursor: pointer;
+}
+.menu-item:hover { background: var(--surface-2); }
+.menu-item.danger { color: var(--danger); }
+
+/* The side navigation is a slide-in drawer on a phone and a permanent rail on
+ * a wide screen; only the media query below changes that. */
+.sidenav {
+  position: fixed;
+  top: var(--topbar-h);
+  bottom: 0;
+  left: 0;
+  width: var(--sidenav-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: .6rem;
+  transform: translateX(-100%);
+  transition: transform .18s ease;
+  z-index: 25;
+  overflow-y: auto;
+}
+.sidenav.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
+
+.nav-item {
+  display: flex; align-items: center; gap: .7rem;
+  width: 100%; text-align: left;
+  background: none; border: 0; font: inherit; font-size: .95rem;
+  color: var(--text-muted); padding: .65rem .7rem; border-radius: var(--radius-sm);
+  cursor: pointer; margin-bottom: .1rem;
+}
+.nav-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav-ico { width: 1.2em; text-align: center; }
+
+.content {
+  padding: 1rem .85rem calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 1rem);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.view-head {
+  display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  margin-bottom: .6rem;
+}
+.view-head.sub { margin-top: 1.5rem; }
+.view-head .btn, .head-actions { margin-left: auto; }
+.head-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.view-intro { font-size: .9rem; max-width: 62ch; }
+
+/* Bottom tab bar: the primary navigation on a phone, hidden on desktop. */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.tab {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .12rem;
+  background: none; border: 0; font: inherit; font-size: .68rem;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+  min-width: 0;
+}
+.tab .nav-ico { font-size: 1.15rem; }
+.tab.active { color: var(--accent); }
+
+/* ---------- panels, cards, lists ---------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.form-grid { display: grid; gap: .9rem; }
+.field.checkbox label { display: flex; align-items: center; gap: .55rem; font-size: .95rem; color: var(--text); margin: 0; }
+.field.checkbox input { width: auto; min-height: 0; }
+.field.actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+.field.actions .btn { flex: 1; }
+
+.card-grid { display: grid; gap: .75rem; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .9rem;
+  box-shadow: var(--shadow);
+}
+.card-head { display: flex; align-items: flex-start; gap: .6rem; margin-bottom: .5rem; }
+.card-title { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.card-sub { font-size: .82rem; color: var(--text-muted); }
+.card-meta { display: grid; grid-template-columns: auto 1fr; gap: .2rem .7rem; font-size: .85rem; margin: .5rem 0; }
+.card-meta dt { color: var(--text-muted); }
+.card-meta dd { margin: 0; overflow-wrap: anywhere; }
+.card-actions { display: flex; gap: .45rem; flex-wrap: wrap; margin-top: .7rem; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .74rem; font-weight: 600; letter-spacing: .01em;
+  padding: .16rem .48rem; border-radius: 999px;
+  background: var(--surface-3); color: var(--text-muted);
+  white-space: nowrap;
+}
+.chip.ok { background: var(--ok-soft); color: var(--ok); }
+.chip.off { background: var(--surface-3); color: var(--text-faint); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.chip.danger { background: var(--danger-soft); color: var(--danger); }
+.chip.accent { background: var(--accent-soft); color: var(--accent); }
+.chip-row { display: flex; gap: .35rem; flex-wrap: wrap; margin-left: auto; }
+
+/* Host rows are cards on a phone and a table-like grid on a wide screen. The
+ * same markup serves both; only the grid definition changes. */
+/* On a phone a host is a single stacked column: identity, address, then a full
+ * width row of actions. The three-column table layout only appears once there
+ * is room for it, at 640px. */
+.host-list { display: grid; gap: .5rem; }
+.host {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .35rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .7rem .8rem;
+}
+.host > * { min-width: 0; }
+.host-name { font-weight: 600; overflow-wrap: anywhere; }
+.host-ip { font-family: var(--mono); font-size: .88rem; }
+.host-mac { font-family: var(--mono); font-size: .8rem; color: var(--text-muted); }
+.host-vendor { font-size: .8rem; color: var(--text-muted); overflow-wrap: anywhere; }
+.host-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+/* Actions stretch to fill the row on a phone, giving each a comfortable target
+ * without any of them being uncomfortably wide. */
+.host-actions .btn { flex: 1 1 auto; min-width: 5.5rem; }
+.host-extra { grid-column: 1 / -1; font-size: .8rem; color: var(--text-muted); }
+
+.segments { display: grid; gap: .35rem; margin-bottom: .8rem; }
+.segment {
+  display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+  font-size: .82rem; color: var(--text-muted);
+  background: var(--surface-2); border-radius: var(--radius-sm); padding: .4rem .6rem;
+}
+
+.audit-list { display: grid; gap: .35rem; }
+.audit-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .2rem .6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: .5rem .7rem;
+  font-size: .86rem;
+}
+.audit-row.ok { border-left-color: var(--ok); }
+.audit-row.fail { border-left-color: var(--danger); }
+.audit-when { font-family: var(--mono); font-size: .76rem; color: var(--text-muted); white-space: nowrap; }
+.audit-what { overflow-wrap: anywhere; }
+
+.empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.status {
+  margin-top: .9rem;
+  padding: .7rem .85rem;
+  border-radius: var(--radius-sm);
+  font-size: .9rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.status.ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.status.error { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+.status.busy { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+
+/* ---------- token reveal ---------- */
+
+.token-reveal { margin-top: 1rem; border-color: var(--warn); }
+.reveal-label { margin-top: .9rem; }
+.copy-row { display: flex; gap: .5rem; align-items: stretch; }
+.copy-row code {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: .55rem .7rem;
+  overflow-x: auto;
+  white-space: pre;
+  /* The token and the join command are long single-line strings; they scroll
+   * inside this box rather than forcing the page to scroll sideways. */
+}
+.token { letter-spacing: .02em; }
+
+/* ---------- modal ---------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(8, 12, 20, .55);
+  display: grid;
+  place-items: end center;
+  padding: 0;
+}
+.modal-card {
+  width: 100%;
+  max-height: 92dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  padding: 1.1rem;
+  padding-bottom: calc(1.1rem + env(safe-area-inset-bottom));
+}
+.modal-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .9rem; }
+.modal-head .icon-btn { margin-left: auto; }
+.modal-body { display: grid; gap: .85rem; }
+.modal-foot { display: flex; gap: .6rem; margin-top: 1.1rem; }
+.modal-foot .btn { flex: 1; }
+
+/* ---------- toasts ---------- */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + .75rem);
+  z-index: 70;
+  display: grid;
+  gap: .5rem;
+  width: min(440px, calc(100vw - 1.5rem));
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: .65rem .8rem;
+  font-size: .88rem;
+  overflow-wrap: anywhere;
+}
+.toast.ok { border-left-color: var(--ok); }
+.toast.error { border-left-color: var(--danger); }
+
+/* ---------- tablet ---------- */
+
+@media (min-width: 640px) {
+  .content { padding: 1.25rem 1.25rem calc(var(--tabbar-h) + 1.5rem); }
+  .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .field.actions { grid-column: 1 / -1; }
+  .field.actions .btn { flex: 0 0 auto; min-width: 170px; }
+  .card-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  /* Enough room for the table-like layout: identity, address, actions. */
+  .host { grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) auto; gap: .25rem .6rem; align-items: center; }
+  .host-actions { justify-content: flex-end; }
+  .host-actions .btn { flex: 0 0 auto; min-width: 0; }
+  .modal { place-items: center; padding: 1.5rem; }
+  .modal-card { width: min(540px, 100%); border-radius: var(--radius-lg); }
+  .toasts { left: auto; right: 1.25rem; transform: none; bottom: calc(var(--tabbar-h) + 1rem); }
+}
+
+/* ---------- desktop ---------- */
+
+@media (min-width: 900px) {
+  /* The drawer becomes a permanent rail and the phone tab bar disappears. */
+  .sidenav { transform: none; box-shadow: none; }
+  .nav-toggle { display: none; }
+  .tabbar { display: none; }
+  .content {
+    margin-left: var(--sidenav-w);
+    max-width: calc(1180px + var(--sidenav-w));
+    padding-bottom: 2rem;
+  }
+  .toasts { bottom: 1.25rem; }
+  .field.narrow { max-width: 240px; }
+  /* A precise pointer does not need a 38px target, and the density helps when
+   * a host list runs to hundreds of rows. */
+  .btn.small { min-height: 32px; padding: .3rem .6rem; font-size: .84rem; }
+}
+
+@media (min-width: 1200px) {
+  .form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Respect a stated preference for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

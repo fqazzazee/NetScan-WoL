@@ -1,0 +1,38 @@
+# NetScan-WoL Command Hub image. Works unchanged with docker build and
+# podman build.
+#
+# The hub does no raw networking, so it needs no capabilities at all and runs
+# as an unprivileged user.
+
+FROM docker.io/library/golang:1.24-alpine AS build
+
+WORKDIR /src
+
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+
+ARG VERSION=2.0.0
+ARG TARGETARCH
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags "-s -w -X main.Version=${VERSION}" \
+    -o /out/nswhub ./cmd/nswhub
+
+FROM scratch
+
+COPY --from=build /out/nswhub /nswhub
+
+# UID 65532 is the conventional "nonroot" id used by distroless images. The
+# data directory must be writable by it; the manifests and compose file below
+# set fsGroup or ownership accordingly.
+USER 65532:65532
+
+# State, the certificate authority and the audit log all live here. Losing this
+# volume means losing the CA, which invalidates every enrolled agent.
+VOLUME ["/var/lib/netscan-wol/hub"]
+
+EXPOSE 8443
+
+ENTRYPOINT ["/nswhub"]
+CMD ["--data", "/var/lib/netscan-wol/hub", "--listen", ":8443"]

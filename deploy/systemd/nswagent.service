@@ -1,0 +1,49 @@
+[Unit]
+Description=NetScan-WoL Agent
+Documentation=https://github.com/fqazzazee/NetScan-WoL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/nswagent run --state /var/lib/netscan-wol/agent
+Restart=always
+RestartSec=10s
+
+# The agent needs raw sockets for ARP and ICMP, and nothing else. Granting the
+# single capability rather than running as root is the whole point of this
+# unit: a compromised agent gets packet access to its own segment, not the
+# machine.
+User=nswagent
+Group=nswagent
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+StateDirectory=netscan-wol/agent
+StateDirectoryMode=0700
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+
+# AF_PACKET is what raw ARP scanning uses; without it the agent falls back to
+# the kernel neighbour table and reports far fewer hosts.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK AF_PACKET
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
