@@ -76,6 +76,16 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
+	// A CA created by an early v2 build used Ed25519, which no browser can
+	// verify. Agents are unaffected, but the web interface becomes unreachable,
+	// so say so plainly rather than leaving the operator to debug an opaque TLS
+	// error.
+	if !authority.BrowserCompatible() {
+		cfg.Logger.Warn("this hub's certificate authority uses Ed25519, which no browser can verify",
+			"effect", "Firefox, Chrome and Brave refuse to connect with SSL_ERROR_NO_CYPHER_OVERLAP; agents still work",
+			"fix", "stop the hub, delete "+cfg.DataDir+"/pki, restart to generate an ECDSA authority, then re-enroll every agent")
+	}
+
 	s := &Server{
 		cfg:      cfg,
 		log:      cfg.Logger,

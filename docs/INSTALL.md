@@ -388,6 +388,21 @@ should show `Wake-on: g`.
 **A host shows as online but with a MAC mismatch warning.** DHCP handed its
 address to a different machine. Rescan to refresh the mapping.
 
+**The browser fails with `SSL_ERROR_NO_CYPHER_OVERLAP`** (Firefox) or
+`ERR_SSL_VERSION_OR_CIPHER_MISMATCH` (Chrome, Brave). The hub's certificate
+authority was created by an early v2 build that used Ed25519, which no browser
+can verify. The hub warns about this at startup. Agents are unaffected; only
+browsers fail. To fix it:
+
+```bash
+sudo systemctl stop nswhub
+sudo rm -rf /var/lib/netscan-wol/hub/pki
+sudo systemctl start nswhub
+```
+
+The hub generates a new ECDSA authority. Its fingerprint changes, so every
+agent must be re-enrolled with a fresh token and the new `--ca-pin`.
+
 **The browser warns about the certificate.** Expected: the hub uses its own CA.
 Either accept it, add `pki/ca.crt` to your trust store, or terminate TLS at a
 proxy with a publicly trusted certificate.

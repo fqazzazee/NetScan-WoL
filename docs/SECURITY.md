@@ -206,7 +206,7 @@ an attacker who reaches the container to pivot with.
 
 | Purpose | Choice |
 |---|---|
-| Agent and hub keys | Ed25519 |
+| Agent and hub keys | ECDSA P-256 |
 | Transport | TLS 1.2 minimum, AEAD ciphers with forward secrecy only |
 | Agent authentication | Mutual TLS, one certificate per agent |
 | Enrollment tokens | 256-bit random, SHA-256 stored, constant-time compared |
@@ -216,6 +216,21 @@ an attacker who reaches the container to pivot with.
 
 Certificate lifetimes: CA 10 years, hub and agent leaves 2 years, backdated 10
 minutes to absorb the clock skew common on appliances that boot without NTP.
+
+**Why ECDSA and not Ed25519.** Ed25519 is the better algorithm on the merits,
+and an early build used it throughout. It had to be replaced: no major browser
+can verify an Ed25519 X.509 certificate. Neither NSS (Firefox) nor BoringSSL
+(Chrome, Brave, Edge) implements them, and a browser that cannot verify the
+chain aborts the handshake — surfacing as `SSL_ERROR_NO_CYPHER_OVERLAP`. This
+applies to the CA as well as the leaf, since the browser verifies both. Go and
+curl both support Ed25519 happily, which is precisely why the problem is easy
+to ship without noticing.
+
+If you created a hub with an early v2 build, it will warn at startup that its
+authority is Ed25519. Agents keep working; only browsers are affected. To fix
+it, stop the hub, delete the `pki/` directory, restart to generate an ECDSA
+authority, and re-enroll the agents — the CA fingerprint changes, so their old
+pins and certificates no longer apply.
 
 ## Known limitations
 

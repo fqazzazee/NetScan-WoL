@@ -6,15 +6,25 @@
 // can be revoked individually by deleting its record, and a stolen enrollment
 // token cannot be replayed once it has been consumed.
 //
-// Keys are Ed25519. They are small, fast, have no parameter choices to get
-// wrong, and are supported by every TLS 1.3 stack — including Go's, which is
-// the only one involved here.
+// Keys are ECDSA on P-256.
+//
+// Ed25519 would be the nicer choice on the merits — smaller, faster, no
+// parameter choices to get wrong — but no major browser can verify an Ed25519
+// X.509 certificate. Neither NSS (Firefox) nor BoringSSL (Chrome, Brave, Edge)
+// implements it, and a browser that cannot verify the chain aborts the
+// handshake with no cipher overlap. Since an operator points a browser at this
+// hub, the certificate has to be one browsers accept, and that means ECDSA.
+//
+// This applies to the whole chain, not just the leaf: the browser verifies the
+// CA's signature too, so the CA must be ECDSA as well.
 package ca
 
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -56,15 +66,41 @@ const (
 type Authority struct {
 	dir string
 
-	mu        sync.RWMutex
-	caCert    *x509.Certificate
-	caKey     ed25519.PrivateKey
+	mu     sync.RWMutex
+	caCert *x509.Certificate
+	// Keys are held as crypto.Signer rather than a concrete type so a CA
+	// created by an older release, which used Ed25519, still loads instead of
+	// failing outright. New material is always ECDSA.
+	caKey     crypto.Signer
 	caPEM     []byte
 	fprint    string
 	srvCert   *x509.Certificate
 	srvPEM    []byte
-	srvKey    ed25519.PrivateKey
+	srvKey    crypto.Signer
 	srvKeyPEM []byte
+}
+
+// newKey generates a fresh signing key. ECDSA P-256 is used everywhere: it is
+// the only modern curve that every browser, every TLS library and every
+// platform trust store accepts without argument.
+func newKey() (crypto.Signer, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate P-256 key: %w", err)
+	}
+	return key, nil
+}
+
+// BrowserCompatible reports whether the loaded CA can be verified by a browser.
+//
+// A CA created by an early v2 build used Ed25519, which no browser implements.
+// Such a hub serves agents perfectly well but is unreachable from Firefox,
+// Chrome or Brave, so the caller warns about it at startup.
+func (a *Authority) BrowserCompatible() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	_, isEd25519 := a.caKey.Public().(ed25519.PublicKey)
+	return !isEd25519
 }
 
 // Open loads the CA from dir, creating it on first run. The directory and the
@@ -105,10 +141,11 @@ func (a *Authority) loadOrCreateRoot() error {
 		return fmt.Errorf("CA directory %s is half-initialised: one of ca.crt/ca.key exists without the other; remove both to regenerate", a.dir)
 	}
 
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	priv, err := newKey()
 	if err != nil {
 		return fmt.Errorf("generate CA key: %w", err)
 	}
+	pub := priv.Public()
 	serial, err := newSerial()
 	if err != nil {
 		return err
@@ -177,10 +214,11 @@ func (a *Authority) loadOrCreateServer(names []string) error {
 		}
 	}
 
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	priv, err := newKey()
 	if err != nil {
 		return fmt.Errorf("generate hub server key: %w", err)
 	}
+	pub := priv.Public()
 	dnsNames, ips := splitNames(names)
 	serial, err := newSerial()
 	if err != nil {
@@ -246,8 +284,13 @@ func (a *Authority) SignAgent(csrPEM []byte, agentID, agentName string) ([]byte,
 	if err := csr.CheckSignature(); err != nil {
 		return nil, fmt.Errorf("CSR signature does not verify: %w", err)
 	}
-	if _, ok := csr.PublicKey.(ed25519.PublicKey); !ok {
-		return nil, fmt.Errorf("agent keys must be Ed25519")
+	// Agent certificates are only ever presented to the hub, never to a
+	// browser, so an Ed25519 key from an older agent build is still perfectly
+	// usable. Both are accepted; anything else is not.
+	switch csr.PublicKey.(type) {
+	case *ecdsa.PublicKey, ed25519.PublicKey:
+	default:
+		return nil, fmt.Errorf("agent keys must be ECDSA or Ed25519, got %T", csr.PublicKey)
 	}
 
 	serial, err := newSerial()
@@ -334,11 +377,10 @@ func FingerprintPEM(certPEM []byte) (string, error) {
 // NewAgentKeyAndCSR generates an agent's key pair and a CSR for it. The private
 // key never leaves the agent host.
 func NewAgentKeyAndCSR(commonName string) (keyPEM, csrPEM []byte, err error) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	priv, err := newKey()
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate agent key: %w", err)
 	}
-	_ = pub
 	tmpl := &x509.CertificateRequest{
 		Subject: pkix.Name{CommonName: commonName},
 	}
@@ -374,7 +416,10 @@ func newSerial() (*big.Int, error) {
 	return serial, nil
 }
 
-func parseCertKey(certPEM, keyPEM []byte) (*x509.Certificate, ed25519.PrivateKey, error) {
+// parseCertKey loads a certificate and its private key, accepting either an
+// ECDSA or an Ed25519 key so material written by an earlier release still
+// opens.
+func parseCertKey(certPEM, keyPEM []byte) (*x509.Certificate, crypto.Signer, error) {
 	certBlock, _ := pem.Decode(certPEM)
 	if certBlock == nil {
 		return nil, nil, fmt.Errorf("certificate file is not valid PEM")
@@ -391,11 +436,24 @@ func parseCertKey(certPEM, keyPEM []byte) (*x509.Certificate, ed25519.PrivateKey
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse private key: %w", err)
 	}
-	key, ok := parsed.(ed25519.PrivateKey)
+	key, ok := parsed.(crypto.Signer)
 	if !ok {
-		return nil, nil, fmt.Errorf("expected an Ed25519 private key, got %T", parsed)
+		return nil, nil, fmt.Errorf("expected a signing private key, got %T", parsed)
 	}
-	if !cert.PublicKey.(crypto.PublicKey).(ed25519.PublicKey).Equal(key.Public()) {
+	switch key.(type) {
+	case *ecdsa.PrivateKey, ed25519.PrivateKey:
+	default:
+		return nil, nil, fmt.Errorf("unsupported private key type %T", parsed)
+	}
+
+	// Confirm the key actually belongs to the certificate. A mismatched pair
+	// would otherwise surface much later as an opaque TLS handshake failure.
+	type equaler interface{ Equal(crypto.PublicKey) bool }
+	certPub, ok := cert.PublicKey.(equaler)
+	if !ok {
+		return nil, nil, fmt.Errorf("certificate holds an unsupported public key type %T", cert.PublicKey)
+	}
+	if !certPub.Equal(key.Public()) {
 		return nil, nil, fmt.Errorf("certificate and private key do not match")
 	}
 	return cert, key, nil
