@@ -37,6 +37,8 @@ START_SERVICE=1
 UNINSTALL=0
 FORCE=0
 RUN_CHECK=0
+REMOVE_V1=0
+KEEP_V1=0
 
 # ---- output ---------------------------------------------------------------
 
@@ -67,9 +69,12 @@ Components:
   agent          A remote agent: ARP scanning and Wake-on-LAN on its own network
   both           Hub and agent together on this server (the v1 single-box setup)
   check          Check prerequisites and report; install nothing
+  remove-v1      Remove a NetScan-WoL v1 installation and nothing else
 
 Common options:
   --check            Run the prerequisite check first, then install
+  --remove-v1        Remove the v1 web service if one is found, without asking
+  --keep-v1          Leave any v1 installation alone, without asking
   --version VER      Release to install (default: 2.0.0)
   --source           Build from this working tree instead of downloading
   --prefix DIR       Install prefix (default: /usr/local)
@@ -112,6 +117,9 @@ Examples:
 
   # Install the agent now, enroll by hand later
   sudo ./install.sh agent --no-start
+
+  # Retire an old v1 install (its saved hosts and history are left in place)
+  sudo ./install.sh remove-v1
 EOF
 }
 
@@ -134,18 +142,21 @@ ${C_BOLD}NetScan-WoL v2${C_RESET}
     ${C_BOLD}3${C_RESET}) Both             hub and agent on this one server.
     ${C_BOLD}4${C_RESET}) Check only       report what is ready and what is missing,
                         change nothing.
+    ${C_BOLD}5${C_RESET}) Remove v1        take out an old v1 web service, keeping
+                        its saved hosts and scan history.
 
 EOF
   local reply
   while true; do
-    read -r -p "  Choose [1-4], or q to quit: " reply || { echo >&2; exit 1; }
+    read -r -p "  Choose [1-5], or q to quit: " reply || { echo >&2; exit 1; }
     case "$reply" in
       1) COMPONENT="hub";   return ;;
       2) COMPONENT="agent"; return ;;
       3) COMPONENT="both";  return ;;
       4) COMPONENT="check"; return ;;
+      5) COMPONENT="remove-v1"; return ;;
       q|Q) exit 0 ;;
-      *) printf '  %sPlease enter 1, 2, 3, 4 or q.%s\n' "$C_DIM" "$C_RESET" >&2 ;;
+      *) printf '  %sPlease enter 1, 2, 3, 4, 5 or q.%s\n' "$C_DIM" "$C_RESET" >&2 ;;
     esac
   done
 }
@@ -153,7 +164,7 @@ EOF
 # ---- argument parsing -----------------------------------------------------
 
 case "${1:-}" in
-  hub|agent|both|check) COMPONENT="$1"; shift ;;
+  hub|agent|both|check|remove-v1) COMPONENT="$1"; shift ;;
   -h|--help)            usage; exit 0 ;;
   "")
     if [[ -t 0 && -t 1 ]]; then
@@ -163,8 +174,8 @@ case "${1:-}" in
       exit 1
     fi
     ;;
-  -*) die "a component must come first: hub, agent, both or check" ;;
-  *)  die "unknown component '${1}' (expected hub, agent, both or check)" ;;
+  -*) die "a component must come first: hub, agent, both, check or remove-v1" ;;
+  *)  die "unknown component '${1}' (expected hub, agent, both, check or remove-v1)" ;;
 esac
 
 while [[ $# -gt 0 ]]; do
@@ -177,6 +188,8 @@ while [[ $# -gt 0 ]]; do
     --force)       FORCE=1; shift ;;
     --check)       RUN_CHECK=1; shift ;;
     --uninstall)   UNINSTALL=1; shift ;;
+    --remove-v1)   REMOVE_V1=1; shift ;;
+    --keep-v1)     KEEP_V1=1; shift ;;
     --hub)         HUB_URL="$2"; shift 2 ;;
     --token)       TOKEN="$2"; shift 2 ;;
     --token-file)  TOKEN_FILE="$2"; shift 2 ;;
@@ -189,6 +202,8 @@ while [[ $# -gt 0 ]]; do
     *)             die "unknown option '$1' (see --help)" ;;
   esac
 done
+
+[[ $REMOVE_V1 -eq 1 && $KEEP_V1 -eq 1 ]] && die "--remove-v1 and --keep-v1 contradict each other"
 
 readonly BINDIR="$PREFIX/bin"
 readonly STATE_ROOT="/var/lib/netscan-wol"
@@ -211,6 +226,124 @@ detect_platform() {
 }
 
 read -r PLATFORM_OS PLATFORM_ARCH <<<"$(detect_platform)"
+
+# ---- v1 detection and removal ---------------------------------------------
+
+# v1 was a bash script with an optional Flask web UI. Its --web-install copied
+# the server to /opt/netscan-wol and wrote a unit called netscan-wol-web. None
+# of that collides with v2 by name or by port, so a forgotten v1 keeps running:
+# scanning the same network, holding its own port, and showing a second,
+# diverging list of hosts. Detecting it is worth doing on every install.
+
+readonly V1_SERVICE="netscan-wol-web"
+readonly V1_UNIT_PATH="/etc/systemd/system/netscan-wol-web.service"
+readonly V1_APP_DIR="/opt/netscan-wol"
+
+V1_HAS_UNIT=0
+V1_ACTIVE=0
+V1_ENABLED=0
+V1_HAS_APP=0
+V1_DATA_DIRS=()
+
+# detect_v1 fills in the V1_* globals and returns 0 when there is something of
+# v1's left on this machine. Data directories alone do not count: they are the
+# part worth keeping, and their presence is no reason to prompt anyone.
+detect_v1() {
+  V1_HAS_UNIT=0; V1_ACTIVE=0; V1_ENABLED=0; V1_HAS_APP=0; V1_DATA_DIRS=()
+
+  if [[ -f "$V1_UNIT_PATH" ]]; then
+    V1_HAS_UNIT=1
+  elif [[ $HAS_SYSTEMD -eq 1 ]] && systemctl cat "${V1_SERVICE}.service" >/dev/null 2>&1; then
+    V1_HAS_UNIT=1
+  fi
+
+  if [[ $V1_HAS_UNIT -eq 1 && $HAS_SYSTEMD -eq 1 ]]; then
+    systemctl is-active  --quiet "${V1_SERVICE}.service" 2>/dev/null && V1_ACTIVE=1
+    systemctl is-enabled --quiet "${V1_SERVICE}.service" 2>/dev/null && V1_ENABLED=1
+  fi
+
+  [[ -d "$V1_APP_DIR" ]] && V1_HAS_APP=1
+
+  local d
+  for d in /root/.netscan-wol /home/*/.netscan-wol; do
+    [[ -d "$d" ]] && V1_DATA_DIRS+=("$d")
+  done
+
+  [[ $V1_HAS_UNIT -eq 1 || $V1_HAS_APP -eq 1 ]]
+}
+
+v1_state_word() {
+  if   [[ $V1_ACTIVE  -eq 1 ]]; then printf 'running'
+  elif [[ $V1_ENABLED -eq 1 ]]; then printf 'enabled, not running'
+  else                               printf 'installed, stopped'
+  fi
+}
+
+report_v1() {
+  [[ $V1_HAS_UNIT -eq 1 ]] && info "service  ${V1_SERVICE}.service — $(v1_state_word)"
+  [[ $V1_HAS_APP  -eq 1 ]] && info "files    ${V1_APP_DIR}"
+  if [[ ${#V1_DATA_DIRS[@]} -gt 0 ]]; then
+    info "data     ${V1_DATA_DIRS[*]}"
+  fi
+}
+
+remove_v1() {
+  if [[ $V1_HAS_UNIT -eq 1 ]]; then
+    if [[ $HAS_SYSTEMD -eq 1 ]]; then
+      systemctl disable --now "${V1_SERVICE}.service" >/dev/null 2>&1 || true
+      systemctl reset-failed "${V1_SERVICE}.service" >/dev/null 2>&1 || true
+    fi
+    rm -f "$V1_UNIT_PATH"
+    if [[ $HAS_SYSTEMD -eq 1 ]]; then
+      systemctl daemon-reload
+    fi
+    ok "removed the ${V1_SERVICE} service"
+  fi
+
+  if [[ $V1_HAS_APP -eq 1 ]]; then
+    rm -rf "$V1_APP_DIR"
+    ok "removed ${V1_APP_DIR}"
+  fi
+
+  # Saved hosts and scan history are the only part of a v1 install worth
+  # anything, and v2 cannot read them. Removing the service must not take them
+  # with it, so they are reported and left exactly where they are.
+  if [[ ${#V1_DATA_DIRS[@]} -gt 0 ]]; then
+    info "kept ${V1_DATA_DIRS[*]} — v1's saved hosts and history, untouched"
+  fi
+}
+
+# handle_v1 runs before an install. It removes v1, keeps it, or asks, depending
+# on the flags and on whether there is anyone at the terminal to ask.
+handle_v1() {
+  detect_v1 || return 0
+
+  step "Found a NetScan-WoL v1 installation"
+  report_v1
+
+  if [[ $KEEP_V1 -eq 1 ]]; then
+    info "leaving it in place (--keep-v1)"
+    return 0
+  fi
+
+  if [[ $REMOVE_V1 -eq 1 ]]; then
+    remove_v1
+    return 0
+  fi
+
+  if [[ -t 0 && -t 1 ]]; then
+    local reply
+    read -r -p "  Remove it? Saved hosts and history are kept. [y/N]: " reply || reply="n"
+    case "$reply" in
+      y|Y|yes|YES) remove_v1 ;;
+      *) info "leaving it in place" ;;
+    esac
+    return 0
+  fi
+
+  warn "v1 is still installed and will keep scanning alongside v2."
+  warn "Remove it with: sudo $0 remove-v1"
+}
 
 # ---- prerequisite check ---------------------------------------------------
 
@@ -386,6 +519,19 @@ check_prereqs() {
     fi
   fi
 
+  # ---- v1 leftovers ----
+  if detect_v1; then
+    printf '\n%s Version 1%s\n' "$C_DIM" "$C_RESET"
+    if [[ $V1_ACTIVE -eq 1 ]]; then
+      warn_ "v1 web service" "${V1_SERVICE}.service is running; it will scan alongside v2"
+    elif [[ $V1_HAS_UNIT -eq 1 ]]; then
+      warn_ "v1 web service" "${V1_SERVICE}.service is installed ($(v1_state_word))"
+    else
+      warn_ "v1 files" "${V1_APP_DIR} left behind"
+    fi
+    info "remove it with: sudo $0 remove-v1"
+  fi
+
   # ---- verdict ----
   echo
   if [[ $CHECK_FAIL -gt 0 ]]; then
@@ -422,6 +568,30 @@ if [[ $RUN_CHECK -eq 1 && $UNINSTALL -eq 0 ]]; then
 fi
 
 [[ $EUID -eq 0 ]] || die "must run as root (try: sudo $0 ${COMPONENT} ...)"
+
+# ---- remove v1 only -------------------------------------------------------
+
+if [[ "$COMPONENT" == "remove-v1" ]]; then
+  step "Looking for a NetScan-WoL v1 installation"
+  if detect_v1; then
+    report_v1
+    echo
+    if [[ $REMOVE_V1 -eq 0 && -t 0 && -t 1 ]]; then
+      read -r -p "  Remove it? Saved hosts and history are kept. [y/N]: " reply || reply="n"
+      case "$reply" in
+        y|Y|yes|YES) ;;
+        *) info "nothing removed"; exit 0 ;;
+      esac
+    fi
+    remove_v1
+  else
+    ok "no v1 installation found"
+    if [[ ${#V1_DATA_DIRS[@]} -gt 0 ]]; then
+      info "v1 data is still at ${V1_DATA_DIRS[*]}; delete it by hand if you mean to"
+    fi
+  fi
+  exit 0
+fi
 
 if [[ $HAS_SYSTEMD -eq 0 && $INSTALL_SERVICE -eq 1 ]]; then
   warn "systemd is not running here; installing binaries only"
@@ -461,6 +631,10 @@ if [[ $UNINSTALL -eq 1 ]]; then
   [[ "$COMPONENT" == "agent" || "$COMPONENT" == "both" ]] && uninstall_one nswagent "${STATE_ROOT}/agent"
   exit 0
 fi
+
+# Deal with any v1 before fetching anything, so the question is answered while
+# the operator is still watching rather than after a download.
+handle_v1
 
 # ---- obtaining binaries ---------------------------------------------------
 

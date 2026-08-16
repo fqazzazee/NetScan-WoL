@@ -277,6 +277,19 @@ per line and is straightforward to re-enter or convert by hand against the
 The v1 single-machine workflow maps to v2 as: run the hub and one agent on the
 same box.
 
+Nothing in v2 collides with v1 by name or port, so an old install keeps running
+unnoticed and scanning the same network. The installer looks for one on every
+run and offers to take it out; `--remove-v1` and `--keep-v1` answer that in
+advance, and
+
+```bash
+sudo ./install.sh remove-v1
+```
+
+does it on its own. Either way it removes `netscan-wol-web.service` and
+`/opt/netscan-wol` and leaves `~/.netscan-wol` — saved hosts, history and logs
+— where it is.
+
 ---
 
 ## License
