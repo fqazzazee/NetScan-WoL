@@ -7,6 +7,7 @@ per-platform detail.
 ## Contents
 
 - [The install script](#the-install-script)
+- [Removing version 1](#removing-version-1)
 - [Build from source](#build-from-source)
 - [The hub](#the-hub)
 - [Agents on a host](#agents-on-a-host-systemd)
@@ -35,6 +36,8 @@ Run it with no arguments and it asks what this server should be:
     3) Both             hub and agent on this one server.
     4) Check only       report what is ready and what is missing,
                         change nothing.
+    5) Remove v1        take out an old v1 web service, keeping
+                        its saved hosts and scan history.
 ```
 
 Or name the component directly:
@@ -102,6 +105,8 @@ sudo ./install.sh agent --check --hub https://hub.example.com:8443 --token 8f3c�
 | `--no-start` | Create the unit but leave it stopped |
 | `--force` | Reinstall, and re-enroll over an existing identity |
 | `--uninstall` | Remove the component, keeping its state |
+| `--remove-v1` | Remove a v1 install if one is found, without asking |
+| `--keep-v1` | Leave a v1 install alone, without asking |
 
 Notes on what it does:
 
@@ -120,6 +125,40 @@ Notes on what it does:
 
 For containers, Kubernetes and Proxmox, use the platform sections below
 instead.
+
+## Removing version 1
+
+Nothing in v2 shares a name, a path or a port with v1, so an old install keeps
+running beside the new one: scanning the same network on its own schedule and
+serving a second, slowly diverging list of hosts. Every install run looks for
+one and says what it found.
+
+```
+==> Found a NetScan-WoL v1 installation
+    service  netscan-wol-web.service — running
+    files    /opt/netscan-wol
+    data     /root/.netscan-wol
+  Remove it? Saved hosts and history are kept. [y/N]:
+```
+
+On a terminal it asks. Piped into a shell it warns and carries on, so an
+unattended install never blocks on a question nobody is there to answer. Decide
+in advance with `--remove-v1` or `--keep-v1`.
+
+To retire v1 on its own, without installing anything:
+
+```bash
+sudo ./install.sh remove-v1
+```
+
+That stops and disables `netscan-wol-web.service`, deletes its unit and
+`/opt/netscan-wol`, and leaves `~/.netscan-wol` — the saved hosts, scan history
+and logs — untouched. v2 cannot read those files, but they are the only part of
+a v1 install worth anything, so removing the service never touches them. Delete
+them by hand once you are sure.
+
+`./install.sh check` reports a v1 install too, under **Version 1**, and changes
+nothing.
 
 ## Build from source
 
