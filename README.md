@@ -292,6 +292,12 @@ does it on its own. Either way it removes `netscan-wol-web.service` and
 
 ---
 
+## Support
+
+If it saved you a walk to wake up a machine, you can [buy me a coffee ☕](https://buymeacoffee.com/fqazzazee).
+
+---
+
 ## License
 
 MIT
